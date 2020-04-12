@@ -3,10 +3,10 @@
 
 # vpm - void package management utility for
 # XBPS, the X Binary Package System
-# Copyright (c) 2016 Armin Jenewein <a@m2m.pm>, GitHub: @netzverweigerer
+# Copyright (c) 2016-2020 Armin Jenewein - GitHub: @netzverweigerer
 # For more information about XBPS, see:
 # https://github.com/voidlinux/xbps
-
+# 
 # Released under the terms of the GNU general public license, version 3+
 # see LICENSE file for license information.
 
