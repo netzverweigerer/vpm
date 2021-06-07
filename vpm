@@ -4,6 +4,8 @@
 # vpm - void package management utility for
 # XBPS, the X Binary Package System
 # Copyright (c) 2016 Armin Jenewein <a@m2m.pm>, GitHub: @netzverweigerer
+# Copyright (c) 2019 Dave Eddy <dave@daveeddy.com>, GitHub: @bahamas10
+# Copyright (c) 2021 zenobit, <b0yc8wrv7@relay.firefox.com>, GitHub: @zen0bit Gitlab: @zenobit
 # For more information about XBPS, see:
 # https://github.com/voidlinux/xbps
 
@@ -11,7 +13,7 @@
 # see LICENSE file for license information.
 
 # set version number
-version="1.3"
+version="1.4"
 
 # disable verbosity, by default
 verbose=false
@@ -27,6 +29,7 @@ numcolorpkgcount=8
 numcolordarkgray=11
 numcolorbrackets=6
 
+version=1.4
 progname=${0##*/}
 
 # enable or disable colors based on the argument given, i.e.:
@@ -100,8 +103,15 @@ getlogo () {
 # prints a message (with vpm-prefix)
 msg () {
   local logo=$(getlogo)
+  local newline=true
 
-  echo "$logo" "$colortext" "$@" "$colorreset"
+  if [[ $1 == '-n' ]]; then
+    newline=false
+    shift
+  fi
+
+  printf '%s %s%s%s' "$logo" "$colortext" "$*" "$colorreset"
+  $newline && echo
 }
 
 # rmsg - same (but colorized based on return status passed via $1)
@@ -118,7 +128,7 @@ rmsg () {
     statuscolor=$colorfail
   fi
 
-  echo "$logo" "$statuscolor" "$@" "$colorreset"
+  printf '%s %s%s%s\n' "$logo" "$statuscolor" "$*" "$colorreset"
 }
 
 banner () {
@@ -131,7 +141,7 @@ banner () {
   echo -n "$colorlogo"
   echo -n '  \_/| .__/_|_|_|'
   echo -n "$colorgray"
-  echo '  GitHub: https://github.com/netzverweigerer/vpm'
+  echo '  GitHub: https://github.com/oSoWoSo/vpm'
   echo -n "$colorlogo"
   echo '     |/          '
   echo '     ´          '
@@ -142,13 +152,14 @@ version () {
   banner
   msg "$progname - Version: $version"
   msg "Copyright (c) 2016 Armin Jenewein <a@m2m.pm> (GPLv3+)"
+  msg "Copyright (c) 2021 zenobit <b0yc8wrv7@relay.firefox.com> (GPLv3+)"
   msg "XBPS version: $(xbps-query -v --version | sed 's/GIT: UNSET//')"
 }
 
 # check if we have UID 0, exit otherwise
 rootcheck () {
   if [[ $EUID -gt 0 ]]; then
-    msg "$progname: This operation needs super-user privileges."
+    msg "$(tput setaf 1)This operation needs super-user privileges.$(tput sgr 0)"
     SUDO=sudo
   else
     SUDO=''
@@ -162,6 +173,19 @@ t () {
     echo
     tput setaf 109
   fi
+}
+
+wrapcommand() {
+  local cmd ret
+  cmd=("$@")
+
+  echo "$colortext(${cmd[*]}):$colorreset"
+
+  "${cmd[@]}"
+  ret=$?
+
+  rmsg "$ret" "[${cmd[*]}], return code was: $ret"
+  exit "$ret"
 }
 
 usage () {
@@ -188,11 +212,11 @@ usage () {
   echo "sync (sy)                      - Synchronize remote repository data"
   t "xbps-install -S"
   echo "update (up)                    - Update the system"
-  t "xbps-install -Sduv"
+  t "xbps-install -Suv"
   echo "listrepos (lr)                 - List configured repositories"
   echo "repolist (rl)                  - Alias for listrepos"
   t "xbps-query -v -L"
-  echo "addrepo (ar) <ARGS>            - Add an additional repository"
+  echo "addrepo (ad) <ARGS>            - Add an additional repository"
   t "xbps-install <ARGS>"
   echo "info (in) <pkg>                - Show information about <package>"
   t "xbps-query-v -R"
@@ -209,9 +233,9 @@ usage () {
   echo "list (ls)                      - List installed packages"
   t "xbps-query -v -l"
   echo "install (i) <pkg(s)>           - Install <package(s)>"
-  t "xbps-install -S"
+  t "xbps-install"
   echo "devinstall (di) <pkg(s)>       - Install <package> (and corresponding <package>-devel package(s))"
-  t "xbps-install -S <package> <package>-devel"
+  t "xbps-install <package> <package>-devel"
   echo "listalternatives (la)          - List alternative candidates"
   t "xbps-alternatives -l"
   echo "setalternative (sa) <pkg(s)    - Set alternative for <package>"
@@ -224,10 +248,10 @@ usage () {
   t "xbps-remove -v "
   echo "removerecursive (rr) <pkg(s)>  - Recursively remove package(s) (and its dependencies)"
   t "xbps-remove -v -R"
-  echo "cleanup (cl)                   - Clean up cache directory"
+  echo "cleanup (cl)                   - Remove obsolete packages in cachedir"
   t "xbps-remove -v -O"
   echo "autoremove (ar)                - Remove orphaned packages"
-  t "xbps-remove -v -O"
+  t "xbps-remove -v -o"
   echo "whatprovides (wp) <file>       - Search for package containing <file>"
   t "xlocate <pkg>"
   echo "help                           - Show usage information"
@@ -282,76 +306,47 @@ case "$1" in
   ;;
 esac
 
-if [[ "$1" == "" ]]; then
+if [[ -z $1 ]]; then
   usage
   exit 0
 fi
 
-arg=$1
-
-if [[ "$arg" =~ --.* ]]; then
-  b=${arg:2}
-  arg=$b
+cmd=$1
+if [[ $arg =~ --.* ]]; then
+  cmd=${arg:2}
 fi
+shift
 
-case "$arg" in
+case "$cmd" in
   info|in)
-    shift
-    msg "(xbps-query -v -R $@):"
-    xbps-query -v -R "$@"
-    ret=$?
-    rmsg "$ret" "Execution finished (xbps-query -v -R $@), return code was: $ret"
-    exit "$ret"
+    wrapcommand xbps-query -v -R "$@"
   ;;
 
   filelist|fl|listfiles)
-    shift
-    xbps-query -v -R -f "$@"
-    ret=$?;
-    if [[ $verbose == "true" ]]; then
-      rmsg "$ret" "Execution finished (xbps-query -v -R -f \"*/$1\"), return code was: $ret"
-    fi
-    exit "$ret"
+    wrapcommand xbps-query -v -R -f "$@"
   ;;
 
   deps|dep|dependencies)
-    shift
-    xbps-query -v -R -x "$@"
-    ret=$?
-    rmsg "$ret" "Execution finished (xbps-query -v -R -x \"*/$1\"), return code was: $ret"
-    exit "$ret"
+    wrapcommand xbps-query -v -R -x "$@"
   ;;
 
   reverse|rv)
-    shift
-    msg "Reverse dependencies for $@ (xbps-query -v -R $@):"
-    xbps-query -v -R -X "$@"
-    ret=$?
-    msg "$ret" "Execution finished (xbps-query -v -R $@), return code was: $ret"
-    exit "$ret"
+    msg -n "Reverse dependencies for $* "
+    wrapcommand xbps-query -v -R -X "$@"
   ;;
 
   searchfile|sf)
-    shift
-    msg "searchfile (xbps-query -v -o \"*/$1\"):"
-    xbps-query -v -o "*/$1"
-    ret=$?
-    msg "$ret" "Execution finished (xbps-query -v -o \"*/$1\"), return code was: $ret"
-    exit $ret
+    msg -n 'searchfile '
+    wrapcommand xbps-query -v -o "*/$1"
   ;;
 
   remotesearchfile|rsf)
-    shift
-    msg "remotesearchfile (xbps-query -R -v -o \"*/$1\"):"
-    xbps-query -R -v -o "*/$1"
-    ret=$?
-    msg "$ret" "Execution finished (xbps-query -R -v -o \"*/$1\"), return code was: $ret"
-    exit "$ret"
+    msg -n 'remotesearchfile '
+    wrapcommand xbps-query -R -v -o "*/$1"
   ;;
 
   list|ls)
-    shift
-    msg "Installed packages: "
+    msg -n 'Installed packages: '
 
     count=0
     while read -r _ pkg _; do
@@ -372,187 +367,188 @@ case "$arg" in
   ;;
 
   listalternative|listalternatives|la)
-    xbps-alternatives -l "$@"
-    ret=$?
-    rmsg "$ret" "xbps-alternatives return code: $ret (xbps-alternatives -l $@)"
+    wrapcommand xbps-alternatives -l "$@"
   ;;
 
   setalternative|setalternatives|sa)
-    shift
     rootcheck
-    $SUDO xbps-alternatives -s "$@"
-    ret=$?
-    rmsg "$ret" "xbps-alternatives return code: $ret (xbps-alternatives -s $@)"
+    wrapcommand xbps-alternatives -s "$@"
+    echo
   ;;
 
   repolist|listrepos|rl|lr)
-    msg "Configured repositories (xbps-query -v -L): "
+    code=0
+    msg -n "Configured repositories (xbps-query -v -L): "
+
     xbps-query -v -L
     ret=$?
+    ((ret == 0)) || code=1
     rmsg "$ret" "[xbps-query -v -L] return code: $ret"
-    shift
+
     echo
-    msg "Available sub-repositories (xbps-query -v -Rs void-repo): "
+
+    msg -n "Available sub-repositories (xbps-query -v -Rs void-repo): "
     xbps-query -v -Rs void-repo
     ret=$?
+    ((ret == 0)) || code=1
     rmsg "$ret" "[xbps-query -v -Rs void-repo] return code: $ret"
-    shift
+
     echo
-    msg "Use \"$progname addrepo <repository>\" to add a sub-repository."
+
+    msg -n "Use \"$progname addrepo <repository>\" to add a sub-repository."
     echo
+
+    exit "$code"
   ;;
 
-  addrepo|ar)
-    shift
+  addrepo|ad)
     rootcheck
+    echo
+    if (($# < 1)); then
+      rmsg 255 "ERROR: install: argument missing, try --help."
+      exit 1
+    fi
+    code=0
     for repo in "$@"; do
       msg "Adding repository: $repo"
-      $SUDO xbps-install "$1"
+      $SUDO xbps-install "$repo"
       ret=$?
+      ((ret == 0)) || code=1
       rmsg "$ret" "[xbps-install $arg] return code: $ret"
+
       msg "Synchronizing remote repository data (xbps-install -S): "
       $SUDO xbps-install -S
       ret=$?
+      ((ret == 0)) || code=1
       rmsg "$ret" "[xbps-install -S] return code: $ret"
-      shift
     done
+
+    exit "$code"
     ;;
 
   sync|sy)
-    shift
     rootcheck
-    msg "Synchronizing remote repository data: (xbps-install -S):"
-    $SUDO xbps-install -S
-    ret=$?
-    rmsg "$ret" "[xbps-install -S] return code: $ret"
+    msg -n 'Synchronizing remote repository data '
+    echo
+    wrapcommand $SUDO xbps-install -S
   ;;
 
   install|i)
-    shift
     rootcheck
-    if [[ "$#" -lt 1 ]]; then
-      msg "ERROR: install: argument missing, try --help."
+    if (($# < 1)); then
+      rmsg 255 "ERROR: install: argument missing, try --help."
       exit 1
     fi
-    msg "Installing packages: $@ (xbps-install -S $@) ..."
-    $SUDO xbps-install -S "$@"
-    ret=$?
-    rmsg "$ret" "[xbps-install -S $@] return code: $ret"
+
+    msg -n "Installing packages: $* "
+    echo
+    wrapcommand $SUDO xbps-install "$@"
   ;;
 
   yesinstall)
-    shift
     rootcheck
-    if [[ "$#" -lt 1 ]]; then
-      msg "ERROR: install: argument missing, try --help."
+    if (($# < 1)); then
+      rmsg 255 "ERROR: install: argument missing, try --help."
       exit 1
     fi
-    msg "Installing packages: $@ (xbps-install -S $@) ..."
-    $SUDO xbps-install -y -S "$@"
-    ret=$?
-    rmsg "$ret" "[xbps-install -S $@] return code: $ret"
+    msg -n "Installing packages (assumed yes): $* "
+    echo
+    wrapcommand $SUDO xbps-install -y "$@"
   ;;
 
   devinstall)
-    shift
     rootcheck
-    if [[ "$#" -lt 1 ]]; then
-      msg "ERROR: devinstall: argument missing, try --help."
+    if (($# < 1)); then
+      rmsg 255 "ERROR: devinstall: argument missing, try --help."
       exit 1
     fi
+
     args=("$@")
+    code=0
+
     msg "devinstall: Packages will be installed one-by-one"
     msg "Use \"forceinstall\" to override this if you know what you're doing."
     msg "(Note: forceinstall won't install -devel packages)"
     for arg in "${args[@]}"; do
-      let count=count+1
-      msg "Installing package: $arg (xbps-install -S $arg) ..."
-      $SUDO xbps-install -S "$arg"
+      msg "Installing package: $arg (xbps-install $arg) ..."
+      $SUDO xbps-install "$arg"
       ret=$?
-      rmsg "$ret" "[xbps-install -S $arg] return code: $ret"
+      ((ret == 0)) || code=1
+      rmsg "$ret" "[xbps-install $arg] return code: $ret"
+
       msg "installing devel package (${arg}-devel):"
-      $SUDO xbps-install -S "${arg}-devel"
+      $SUDO xbps-install "${arg}-devel"
       ret=$?
-      rmsg "$ret" "[xbps-install -S ${arg}-devel] return code: $ret"
+      ((ret == 0)) || code=1
+      rmsg "$ret" "[xbps-install ${arg}-devel] return code: $ret"
     done
+
+    exit "$code"
   ;;
 
   forceinstall|fi)
-    shift
     rootcheck
-    msg "Force-Installing Package(s): $@ (xbps-install -Sf $@)"
-    $SUDO xbps-install -Sf "$@"
-    ret=$?
-    rmsg "$ret" "[xbps-install -Sf ${@}] return code: $ret"
+    msg -n "Force-Installing Package(s): $* "
+    echo
+    wrapcommand $SUDO xbps-install -f "$@"
   ;;
 
   remove|rm)
-    shift
     rootcheck
-    msg "Removing package(s): $@ (xbps-remove -v $@)"
-    $SUDO xbps-remove -v "$@"
-    ret=$?
-    rmsg "$ret" "[xbps-remove -v ${@}] return code: $ret"
+    msg -n "Removing package(s): $* "
+    echo
+    wrapcommand $SUDO xbps-remove -v "$@"
   ;;
 
   removerecursive|rr)
-    shift
     rootcheck
-    msg "Removing package(s) recursively: $@ (xbps-remove -v -R $@)"
-    $SUDO xbps-remove -v -R "$@"
-    ret=$?
-    rmsg "$ret" "[xbps-remove -v -R ${@}] return code: $ret"
+    msg -n "Removing package(s) recursively: $* "
+    echo
+    wrapcommand $SUDO xbps-remove -v -R "$@"
   ;;
 
   reconfigure|rc)
-    shift
     rootcheck
-    msg "reconfigure: Re-configuring package(s) (xbps-reconfigure -v $@):"
-    $SUDO xbps-reconfigure -v "$@"
-    ret=$?
-    rmsg "$ret" "[xbps-reconfigure -v ${@}] return code: $ret"
+    msg -n 'reconfigure: Re-configuring package(s) '
+    echo
+    wrapcommand $SUDO xbps-reconfigure -v "$@"
   ;;
 
   autoremove|ar)
-    shift
     rootcheck
-    msg "autoremove: Removing orphaned packages (xbps-remove -v -o)"
-    $SUDO xbps-remove -v -o
-    ret=$?
-    rmsg "$ret" "[xbps-remove -v -o] return code: $ret"
+    msg -n 'autoremove: Removing orphaned packages '
+    echo
+    wrapcommand $SUDO xbps-remove -v -o
   ;;
 
   update|upgrade|up)
-    shift
     rootcheck
-    msg "Running system update (xbps-install -Suv)"
+    msg -n 'Running system update '
+    echo
     $SUDO xbps-install -Suv
-    ret=$?
-    if [[ $ret == 16 ]]; then
-      msg "Updating xbps (xbps-install -u xbps)"
-      xbps-install -u xbps
-      ret2=$?
-      rmsg "$ret2" "[xbps-install -u xbps] return code: $ret2"
-      exit 0 
+    if [[ $? == 16 ]]; then
+      msg -n "$(tput setaf 1)Updating xbps $(tput sgr 0)"
+      $SUDO xbps-install -u xbps
+      wrapcommand $SUDO xbps-install -Suv
+    else
+      if [[ $? == 1 ]]; then
+        msg -n 'Your system is up to date.'
+      else
+        msg -n $? 'Something goes wrong!'
+      fi
     fi
-    rmsg "$ret" "[xbps-install -Suv] return code: $ret"
   ;;
 
   search|s)
-    shift
-    msg "Searching for: $@ (xbps-query -v -Rs $@)"
-    xbps-query -v -Rs "$@"
-    ret=$?
-    rmsg "$ret" "[xbps-query -v -Rs $@] return code: $ret"
+    msg -n "Searching for: $* "
+    wrapcommand xbps-query -v -Rs "$@"
   ;;
 
   cleanup|clean|cl)
-    msg "Cleaning up packages (will remove orphaned packages) (xbps-remove -v -O $@)"
-    shift
+    msg -n 'Remove obsolete packages in cachedir '
     rootcheck
-    $SUDO xbps-remove -v -O "$@"
-    ret=$?
-    rmsg "$ret" "[xbps-remove -v -O $@] return code: $ret"
+    echo
+    wrapcommand $SUDO xbps-remove -v -O "$@"
   ;;
 
   h|help|-h|--help)
@@ -560,41 +556,41 @@ case "$arg" in
   ;;
 
   helppager|help-pager|hp)
-    if hash less >/dev/null 2>&1; then
-      "$0" --color=off help | less
-    else
-      "$0" --color=off help | more
+    pager=$PAGER
+    if [[ -z $pager ]]; then
+      if command -v less &>/dev/null; then
+        pager=less
+      else
+        pager=more
+      fi
     fi
+
+    "$0" --color=off help | $pager
+    exit 0
   ;;
 
   whatprovides|wp)
-    shift
-    if hash xlocate >/dev/null 2>&1; then
-      # set -x
-      # xlocate -S "$@"
-      msg "relaying to: \"xlocate $@\" - use xlocate -S to (re-)build cached DB."
-      xlocate "$@"
-    else
+    if ! command -v xlocate &>/dev/null; then
       rmsg 255 "xlocate not found. Try installing the xtools package."
+      exit 1
     fi
+
+    msg -n "relaying to xlocate - use xlocate -S to (re-)build cached DB. "
+    wrapcommand xlocate "$@"
   ;;
 
   ''|*)
-    a="$1"
-    if hash "xbps-${a}" >/dev/null 2>&1; then
-      shift
-      # xbps-<subcommand> found
-      msg "relaying to XBPS: xbps-$a $@"
-      "xbps-$a" "$@"
-      ret=$?
-      rmsg "$ret" "xbps-$a $@ return code: $ret"
-    else
-      rmsg 255 "Unrecognized $progname subcommand: $1 (and xbps-$1 does not exist) - Try: $progname help"
+    xbpscmd="xbps-$cmd"
+    if ! command -v "$xbpscmd" &>/dev/null; then
+      rmsg 255 "Unrecognized $progname subcommand: $cmd (and $xbpscmd does not exist) - Try: $progname help"
       echo
       exit 1
     fi
-  ;;
 
+    # xbps-<subcommand> found
+    msg -n 'relaying to XBPS: '
+    wrapcommand "$xbpscmd" "$@"
+  ;;
 esac
 
-exit 0
+# enjoy and make better if you can...
